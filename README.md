@@ -38,19 +38,19 @@ Ein vollständiges Telemetrie- und Statistik-Dashboard für PlayStation Racing G
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    PlayStation 4 Pro                     │
-│  ┌──────────┬──────────┬──────────┐                    │
-│  │    AC    │  F1 2024 │   GT7    │                    │
-│  └────┬─────┴────┬─────┴────┬─────┘                    │
-└───────┼──────────┼──────────┼────────────────────────────┘
+│                    PlayStation 4 Pro                    │
+│  ┌──────────┬──────────┬──────────┐                     │
+│  │    AC    │  F1 2024 │   GT7    │                     │
+│  └────┬─────┴────┬─────┴────┬─────┘                     │
+└───────┼──────────┼──────────┼───────────────────────────┘
         │          │          │
         │ UDP 9996 │ UDP 20777│ UDP 33740
         └──────────┴──────────┘
                    │
                    ▼
 ┌──────────────────────────────────────────────────────────┐
-│              Docker Compose Stack                         │
-│                                                           │
+│              Docker Compose Stack                        │
+│                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │         Spring Boot Application (Groovy)           │  │
 │  │  ┌──────────────────────────────────────────────┐  │  │
@@ -72,8 +72,8 @@ Ein vollständiges Telemetrie- und Statistik-Dashboard für PlayStation Racing G
 │  │  │ - Statistics API                             │  │  │
 │  │  └──────────────────────────────────────────────┘  │  │
 │  └────────────────────────────────────────────────────┘  │
-│                          │                                │
-│                          ▼                                │
+│                          │                               │
+│                          ▼                               │
 │  ┌────────────────────────────────────────────────────┐  │
 │  │              PostgreSQL 16                         │  │
 │  │  - drivers                                         │  │
@@ -82,12 +82,12 @@ Ein vollständiges Telemetrie- und Statistik-Dashboard für PlayStation Racing G
 │  │  - laps                                            │  │
 │  │  - statistics                                      │  │
 │  └────────────────────────────────────────────────────┘  │
-│                                                           │
+│                                                          │
 └──────────────────────────────────────────────────────────┘
                           │
                           ▼ HTTP/REST
 ┌──────────────────────────────────────────────────────────┐
-│              Vue.js Frontend (SPA)                        │
+│              Vue.js Frontend (SPA)                       │
 │  - Dashboard (Live Telemetry & Active Sessions)          │
 │  - Global & Track Leaderboards                           │
 │  - Driver Statistics & Profile                           │
