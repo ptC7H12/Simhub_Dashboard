@@ -3,30 +3,35 @@ package com.racingstats.domain
 import jakarta.persistence.*
 import java.time.LocalDateTime
 
+import static jakarta.persistence.GenerationType.UUID as UUID_STRATEGY
+import static jakarta.persistence.FetchType.LAZY
+import static jakarta.persistence.EnumType.STRING
+import static jakarta.persistence.CascadeType.ALL
+
 @Entity
 @Table(name = 'sessions')
 class Session {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
+    @GeneratedValue(strategy = UUID_STRATEGY)
     UUID id
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = LAZY)
     @JoinColumn(name = 'driver_id', nullable = false)
     Driver driver
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = LAZY)
     @JoinColumn(name = 'track_id', nullable = false)
     Track track
 
     @Column(name = 'car_model')
     String carModel
 
-    @Enumerated(EnumType.STRING)
+    @Enumerated(STRING)
     @Column(nullable = false)
     Game game
 
-    @Enumerated(EnumType.STRING)
+    @Enumerated(STRING)
     @Column(name = 'session_type', nullable = false)
     SessionType sessionType
 
@@ -51,7 +56,7 @@ class Session {
     @Column(name = 'average_lap_time')
     Long averageLapTime
 
-    @OneToMany(mappedBy = 'session', cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = 'session', cascade = [ALL], orphanRemoval = true)
     List<Lap> laps = []
 
     void endSession() {

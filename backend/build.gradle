@@ -30,9 +30,6 @@ dependencies {
     implementation 'org.apache.groovy:groovy-json:4.0.15'
     implementation 'org.apache.groovy:groovy-sql:4.0.15'
 
-    // Hibernate Types for JSONB support
-    implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.6.1'
-
     // Micrometer for metrics (Prometheus)
     implementation 'io.micrometer:micrometer-registry-prometheus'
 
@@ -83,21 +80,4 @@ tasks.register('devRun', JavaExec) {
 // Fat JAR Configuration
 springBoot {
     buildInfo()
-}
-
-// Source Sets für Groovy
-sourceSets {
-    main {
-        groovy {
-            srcDirs = ['src/main/groovy']
-        }
-        resources {
-            srcDirs = ['src/main/resources']
-        }
-    }
-    test {
-        groovy {
-            srcDirs = ['src/test/groovy']
-        }
-    }
 }

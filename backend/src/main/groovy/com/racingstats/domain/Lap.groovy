@@ -1,8 +1,9 @@
 package com.racingstats.domain
 
-import io.hypersistence.utils.hibernate.type.json.JsonBinaryType
 import jakarta.persistence.*
-import org.hibernate.annotations.Type
+import org.hibernate.annotations.JdbcTypeCode
+import org.hibernate.type.SqlTypes
+
 import java.time.LocalDateTime
 
 @Entity
@@ -44,7 +45,7 @@ class Lap {
     @Column(name = 'sector_3_time')
     Long sector3Time
 
-    @Type(JsonBinaryType)
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = 'telemetry_data', columnDefinition = 'jsonb')
     String telemetryData
 
