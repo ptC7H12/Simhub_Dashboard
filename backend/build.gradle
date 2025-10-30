@@ -1,0 +1,103 @@
+plugins {
+    id 'groovy'
+    id 'org.springframework.boot' version '3.2.1'
+    id 'io.spring.dependency-management' version '1.1.4'
+}
+
+group = 'com.racingstats'
+version = '1.0.0'
+
+java {
+    sourceCompatibility = '17'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot Starters
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    // PostgreSQL Driver
+    implementation 'org.postgresql:postgresql:42.7.1'
+
+    // Groovy
+    implementation 'org.apache.groovy:groovy:4.0.15'
+    implementation 'org.apache.groovy:groovy-json:4.0.15'
+    implementation 'org.apache.groovy:groovy-sql:4.0.15'
+
+    // Hibernate Types for JSONB support
+    implementation 'io.hypersistence:hypersistence-utils-hibernate-63:3.6.1'
+
+    // Micrometer for metrics (Prometheus)
+    implementation 'io.micrometer:micrometer-registry-prometheus'
+
+    // Lombok (optional, for reducing boilerplate)
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    // Jackson for JSON processing
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
+
+    // Development Tools
+    developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+    // Testing
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.spockframework:spock-core:2.3-groovy-4.0'
+    testImplementation 'org.spockframework:spock-spring:2.3-groovy-4.0'
+    testImplementation 'com.h2database:h2'  // For in-memory testing
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// Gradle Task für Clean Build
+tasks.register('cleanBuild') {
+    dependsOn clean, build
+}
+
+// Task für Docker Build vorbereiten
+tasks.register('prepareDocker') {
+    dependsOn bootJar
+    doLast {
+        println "JAR created at: ${bootJar.archiveFile.get()}"
+    }
+}
+
+// Custom Task für Development Mode
+tasks.register('devRun', JavaExec) {
+    group = 'application'
+    description = 'Run the application in development mode'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.racingstats.RacingStatsApplication'
+    args = ['--spring.profiles.active=dev']
+}
+
+// Fat JAR Configuration
+springBoot {
+    buildInfo()
+}
+
+// Source Sets für Groovy
+sourceSets {
+    main {
+        groovy {
+            srcDirs = ['src/main/groovy']
+        }
+        resources {
+            srcDirs = ['src/main/resources']
+        }
+    }
+    test {
+        groovy {
+            srcDirs = ['src/test/groovy']
+        }
+    }
+}

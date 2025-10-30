@@ -1,0 +1,204 @@
+# Spring Boot Application Configuration
+# Racing Stats - PostgreSQL Configuration
+
+spring:
+  application:
+    name: racing-stats
+
+  # PostgreSQL Database Configuration
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/racing_stats}
+    username: ${SPRING_DATASOURCE_USERNAME:racinguser}
+    password: ${SPRING_DATASOURCE_PASSWORD:changeme123}
+    driver-class-name: org.postgresql.Driver
+
+    # HikariCP Connection Pool
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      pool-name: RacingStatsHikariPool
+
+  # JPA / Hibernate Configuration
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        use_sql_comments: false
+        jdbc:
+          time_zone: UTC
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+        # Use JSONB for JSON columns
+        types:
+          print_banner: false
+
+    show-sql: ${SPRING_JPA_SHOW_SQL:false}
+    open-in-view: false
+
+  # Thymeleaf (for potential server-side rendering)
+  thymeleaf:
+    cache: false
+    mode: HTML
+    encoding: UTF-8
+    prefix: classpath:/templates/
+    suffix: .html
+
+# Server Configuration
+server:
+  port: ${SERVER_PORT:8080}
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json
+    min-response-size: 1024
+
+  # Error handling
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-stacktrace: on_param
+    include-exception: false
+
+# Spring Boot Actuator (Health Checks & Metrics)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.racingstats: ${LOGGING_LEVEL_COM_RACINGSTATS:INFO}
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+    org.springframework.web: INFO
+    org.springframework.jdbc: WARN
+
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+  file:
+    name: ${LOG_FILE:/app/logs/racing-stats.log}
+    max-size: 10MB
+    max-history: 30
+
+# Custom Application Properties
+racing:
+  # UDP Listener Configuration
+  udp:
+    ac-port: ${UDP_AC_PORT:9996}        # Assetto Corsa
+    f1-port: ${UDP_F1_PORT:20777}       # F1 2024
+    gt7-port: ${UDP_GT7_PORT:33740}     # Gran Turismo 7
+    buffer-size: 2048
+    enabled: true
+
+  # Statistics Calculation
+  statistics:
+    calculation-rate: ${RACING_STATISTICS_CALCULATION_RATE:30000}  # 30 seconds
+    cleanup-enabled: true
+    cleanup-old-sessions-days: 90
+
+  # Session Management
+  session:
+    auto-end-timeout-minutes: 30  # Auto-end sessions after 30 min inactivity
+
+  # CORS Configuration (for Vue.js frontend during development)
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://localhost:8080
+    allowed-methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    allowed-headers: "*"
+    allow-credentials: true
+    max-age: 3600
+
+---
+# Development Profile
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  jpa:
+    show-sql: true
+    hibernate:
+      ddl-auto: create-drop  # Recreate schema on startup in dev
+
+  devtools:
+    restart:
+      enabled: true
+    livereload:
+      enabled: true
+
+logging:
+  level:
+    com.racingstats: DEBUG
+    org.hibernate.SQL: DEBUG
+
+racing:
+  statistics:
+    calculation-rate: 10000  # 10 seconds in dev for faster feedback
+
+---
+# Production Profile
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: validate  # Don't auto-create/update schema in production
+
+  devtools:
+    restart:
+      enabled: false
+
+logging:
+  level:
+    com.racingstats: INFO
+
+server:
+  compression:
+    enabled: true
+
+racing:
+  cors:
+    allowed-origins:
+      - https://your-production-domain.com  # Update this!

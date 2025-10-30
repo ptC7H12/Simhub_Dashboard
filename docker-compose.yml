@@ -1,0 +1,86 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: racing-stats-db
+    environment:
+      POSTGRES_DB: racing_stats
+      POSTGRES_USER: racinguser
+      POSTGRES_PASSWORD: changeme123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - racing-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U racinguser -d racing_stats"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Spring Boot Application
+  racing-stats-app:
+    build: ./backend
+    container_name: racing-stats-app
+    ports:
+      - "8080:8080"      # HTTP/REST API & Frontend
+      - "9996:9996/udp"  # Assetto Corsa
+      - "20777:20777/udp" # F1 2024
+      - "33740:33740/udp" # Gran Turismo 7
+    environment:
+      # Database Connection
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/racing_stats
+      SPRING_DATASOURCE_USERNAME: racinguser
+      SPRING_DATASOURCE_PASSWORD: changeme123
+
+      # JPA/Hibernate
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: false
+
+      # UDP Ports
+      UDP_AC_PORT: 9996
+      UDP_F1_PORT: 20777
+      UDP_GT7_PORT: 33740
+
+      # Logging
+      LOGGING_LEVEL_COM_RACINGSTATS: INFO
+
+      # Statistics Calculation Rate (milliseconds)
+      RACING_STATISTICS_CALCULATION_RATE: 30000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - racing-network
+    restart: unless-stopped
+    volumes:
+      - app_logs:/app/logs
+
+  # Optional: pgAdmin for Database Management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: racing-stats-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@racing.local
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "5050:80"
+    networks:
+      - racing-network
+    restart: unless-stopped
+    profiles:
+      - dev  # Nur starten mit: docker-compose --profile dev up
+
+networks:
+  racing-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  app_logs:
+    driver: local
