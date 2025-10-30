@@ -1,48 +1,125 @@
 <template>
-  <div class="p-4 bg-white rounded-lg shadow flex items-center">
-    <div class="w-12 h-12 flex items-center justify-center bg-gray-100 rounded-full mr-4 text-indigo-600">
-      <template v-if="icon === 'trophy'">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V4h8v3M5 7h14a1 1 0 011 1v2a5 5 0 01-5 5H9a5 5 0 01-5-5V8a1 1 0 011-1zM9 19h6" />
-        </svg>
-      </template>
-      <template v-else-if="icon === 'warning'">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.29 3.86L1.82 18a1 1 0 00.86 1.5h18.64a1 1 0 00.86-1.5L13.71 3.86a1 1 0 00-1.72 0zM12 9v4m0 4h.01" />
-        </svg>
-      </template>
-      <template v-else-if="icon === 'chart'">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17a1 1 0 001 1h6M3 3v18h18" />
-        </svg>
-      </template>
-      <template v-else-if="icon === 'target'">
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3M12 2a10 10 0 100 20 10 10 0 000-20z" />
-        </svg>
-      </template>
-      <template v-else>
-        <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-6a2 2 0 012-2h2a2 2 0 012 2v6" />
-        </svg>
-      </template>
+  <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition">
+    <div class="flex items-center">
+      <!-- Icon -->
+      <div class="flex-shrink-0 rounded-md p-3" :class="iconBgClass">
+        <component :is="iconComponent" class="h-6 w-6" :class="iconColorClass" />
+      </div>
+
+      <!-- Content -->
+      <div class="ml-4 flex-1">
+        <div class="text-sm font-medium text-gray-500">{{ title }}</div>
+        <div class="mt-1 text-2xl font-semibold text-gray-900">
+          {{ value }}
+        </div>
+        <div v-if="subtitle" class="mt-1 text-xs text-gray-600">
+          {{ subtitle }}
+        </div>
+      </div>
     </div>
 
-    <div class="flex-1">
-      <div class="text-sm text-gray-500">{{ title }}</div>
-      <div class="text-2xl font-bold text-gray-900">{{ value }}</div>
-      <div v-if="subtitle" class="text-xs text-gray-400 mt-1">{{ subtitle }}</div>
+    <!-- Optional Footer/Badge -->
+    <div v-if="badge" class="mt-4 pt-4 border-t border-gray-100">
+      <span
+        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+        :class="badgeClass"
+      >
+        {{ badge }}
+      </span>
     </div>
   </div>
 </template>
 
 <script setup>
-import { defineProps } from 'vue'
+import { computed } from 'vue'
+import {
+  TrophyIcon,
+  ExclamationTriangleIcon,
+  ChartBarIcon,
+  ArrowTrendingUpIcon,
+  ClockIcon,
+  UserIcon
+} from '@heroicons/vue/24/outline'
 
 const props = defineProps({
-  title: { type: String, default: '' },
-  value: { type: [String, Number], default: '' },
-  subtitle: { type: String, default: '' },
-  icon: { type: String, default: '' }
+  title: {
+    type: String,
+    required: true
+  },
+  value: {
+    type: [String, Number],
+    required: true
+  },
+  subtitle: {
+    type: String,
+    default: ''
+  },
+  icon: {
+    type: String,
+    default: 'chart',
+    validator: (value) => ['trophy', 'warning', 'chart', 'trend', 'clock', 'user', 'target'].includes(value)
+  },
+  badge: {
+    type: String,
+    default: ''
+  },
+  badgeVariant: {
+    type: String,
+    default: 'info',
+    validator: (value) => ['success', 'warning', 'error', 'info'].includes(value)
+  }
+})
+
+// Icon Component Mapping
+const iconComponent = computed(() => {
+  const icons = {
+    trophy: TrophyIcon,
+    warning: ExclamationTriangleIcon,
+    chart: ChartBarIcon,
+    trend: ArrowTrendingUpIcon,
+    clock: ClockIcon,
+    user: UserIcon,
+    target: ChartBarIcon
+  }
+  return icons[props.icon] || ChartBarIcon
+})
+
+// Icon Background Color
+const iconBgClass = computed(() => {
+  const bgColors = {
+    trophy: 'bg-yellow-100',
+    warning: 'bg-red-100',
+    chart: 'bg-blue-100',
+    trend: 'bg-green-100',
+    clock: 'bg-purple-100',
+    user: 'bg-indigo-100',
+    target: 'bg-pink-100'
+  }
+  return bgColors[props.icon] || 'bg-gray-100'
+})
+
+// Icon Color
+const iconColorClass = computed(() => {
+  const iconColors = {
+    trophy: 'text-yellow-600',
+    warning: 'text-red-600',
+    chart: 'text-blue-600',
+    trend: 'text-green-600',
+    clock: 'text-purple-600',
+    user: 'text-indigo-600',
+    target: 'text-pink-600'
+  }
+  return iconColors[props.icon] || 'text-gray-600'
+})
+
+// Badge Color Classes
+const badgeClass = computed(() => {
+  const variants = {
+    success: 'bg-green-100 text-green-800',
+    warning: 'bg-yellow-100 text-yellow-800',
+    error: 'bg-red-100 text-red-800',
+    info: 'bg-blue-100 text-blue-800'
+  }
+  return variants[props.badgeVariant] || variants.info
 })
 </script>
