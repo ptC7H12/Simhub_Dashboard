@@ -21,12 +21,12 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Spring Boot Application
+  # Spring Boot Backend Application
   racing-stats-app:
     build: ./backend
     container_name: racing-stats-app
     ports:
-      - "8080:8080"      # HTTP/REST API & Frontend
+      - "8080:8080"      # HTTP/REST API
       - "9996:9996/udp"  # Assetto Corsa
       - "20777:20777/udp" # F1 2024
       - "33740:33740/udp" # Gran Turismo 7
@@ -58,6 +58,30 @@ services:
     restart: unless-stopped
     volumes:
       - app_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Vue.js Frontend with Nginx
+  racing-stats-frontend:
+    build: ./frontend
+    container_name: racing-stats-frontend
+    ports:
+      - "80:80"       # Frontend & API Proxy
+    depends_on:
+      - racing-stats-app
+    networks:
+      - racing-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # Optional: pgAdmin for Database Management
   pgadmin:
