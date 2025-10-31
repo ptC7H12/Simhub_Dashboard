@@ -294,8 +294,6 @@ class GT7UdpListener {
             ByteBuffer buffer = ByteBuffer.wrap(data)
             buffer.order(ByteOrder.LITTLE_ENDIAN)
 
-            // --- PACKET STRUCTURE (all offsets in hex) ---
-
             // Position on track (0-1)
             buffer.position(0x04)
             float positionOnTrack = buffer.getFloat()
@@ -308,24 +306,23 @@ class GT7UdpListener {
             buffer.position(0x3C)
             float engineRPM = buffer.getFloat()
 
-            // Fuel
-            buffer.position(0x44)
-            float fuelCapacity = buffer.getFloat()
+            // Car Code (0x94 - 4 bytes int)
+            buffer.position(0x94)
+            int carCode = buffer.getInt()
 
-            buffer.position(0x48)
-            float currentFuel = buffer.getFloat()
+            // Track Code (0xA4 - 4 bytes int) - WICHTIG!
+            buffer.position(0xA4)
+            int trackCode = buffer.getInt()
 
-            // Boost/Turbo
-            buffer.position(0x50)
-            float boost = buffer.getFloat()
-
-            // Tire info would be here (0x54-0x6C)
+            // Update track & car names
+            currentTrack = trackCode > 0 ? "GT7 Track ${trackCode}" : "Gran Turismo 7 Track"
+            currentCar = carCode > 0 ? "GT7 Car ${carCode}" : "Unknown Car"
 
             // Gear & Throttle/Brake
             buffer.position(0x90)
             byte currentGear = buffer.get()
-            byte throttle = buffer.get()    // 0x91
-            byte brake = buffer.get()       // 0x92
+            byte throttle = buffer.get()
+            byte brake = buffer.get()
 
             // Lap information
             buffer.position(0x74)
@@ -340,7 +337,6 @@ class GT7UdpListener {
             buffer.position(0x80)
             int bestLapTimeMs = buffer.getInt()
 
-            // Check for valid data (speed > 0 means we're driving)
             boolean isMoving = velocityMS > 0.1f
 
             // Check for new session
@@ -360,7 +356,7 @@ class GT7UdpListener {
                 TelemetryData telemetry = new TelemetryData(
                         packetType: 'CAR_UPDATE',
                         carId: 0,
-                        speed: velocityMS * 3.6f,  // m/s to km/h
+                        speed: velocityMS * 3.6f,
                         rpm: (int) engineRPM,
                         gear: currentGear.intValue(),
                         throttle: (throttle & 0xFF) / 255f,
@@ -368,12 +364,11 @@ class GT7UdpListener {
                         normalizedPosition: positionOnTrack
                 )
 
-                log.trace("GT7 Telemetry - Speed: {} km/h, Gear: {}, RPM: {}, Lap: {}/{}",
+                log.trace("GT7 Telemetry - Speed: {} km/h, Gear: {}, RPM: {}, Track: {}",
                         String.format("%.1f", telemetry.speed),
                         telemetry.gear,
                         telemetry.rpm,
-                        lapsCompleted,
-                        totalLaps)
+                        currentTrack)
 
                 sessionService.processTelemetry('GRAN_TURISMO_7', telemetry)
             }
@@ -381,6 +376,76 @@ class GT7UdpListener {
         } catch (Exception e) {
             log.error("Error parsing GT7 telemetry", e)
         }
+    }
+
+    private String getTrackName(int trackCode) {
+        // GT7 Track Codes (Community Research)
+        def tracks = [
+                // Japan
+                100: "Tokyo Expressway - Central Outer Loop",
+                101: "Tokyo Expressway - Central Inner Loop",
+                102: "Tokyo Expressway - South Outer Loop",
+                103: "Tokyo Expressway - South Inner Loop",
+                104: "Tokyo Expressway - East Outer Loop",
+                105: "Tokyo Expressway - East Inner Loop",
+
+                200: "Tsukuba Circuit",
+                201: "Suzuka Circuit",
+                202: "Fuji Speedway",
+                203: "Autopolis",
+
+                // Europe
+                300: "Brands Hatch Grand Prix Circuit",
+                301: "Brands Hatch Indy Circuit",
+                302: "Goodwood Motor Circuit",
+
+                400: "Circuit de la Sarthe",
+                401: "Circuit de Spa-Francorchamps",
+                402: "Autodromo Nazionale Monza",
+                403: "Nürburgring 24h",
+                404: "Nürburgring Nordschleife",
+                405: "Red Bull Ring",
+                406: "Circuit de Barcelona-Catalunya",
+
+                // USA
+                500: "Laguna Seca Raceway",
+                501: "Willow Springs Raceway",
+                502: "WeatherTech Raceway Laguna Seca",
+                503: "Daytona International Speedway",
+
+                // Original GT Tracks
+                600: "Dragon Trail - Seaside",
+                601: "Dragon Trail - Gardens",
+                602: "Autodrome Lago Maggiore GP",
+                603: "Autodrome Lago Maggiore - East",
+                604: "Autodrome Lago Maggiore - West",
+                605: "Northern Isle Speedway",
+
+                // Dirt/Rally
+                700: "Fishermans Ranch",
+                701: "Colorado Springs",
+                702: "Alsace Village",
+                703: "Sardegna - Road Track A",
+                704: "Sardegna - Road Track B",
+                705: "Sardegna - Windmills"
+        ]
+
+        return tracks[trackCode] ?: "GT7 Track ${trackCode}"
+    }
+
+    private String getCarName(int carCode) {
+        // Vereinfachtes Car-Mapping (GT7 hat 400+ Autos)
+        // Hier nur ein paar Beispiele - erweitere nach Bedarf
+        def cars = [
+                1: "Mazda Roadster S",
+                2: "Honda NSX Type R",
+                3: "Nissan GT-R Nismo",
+                4: "Toyota Supra RZ",
+                5: "Porsche 911 GT3 RS"
+                // ... weitere nach Bedbedarf
+        ]
+
+        return cars[carCode] ?: "GT7 Car ${carCode}"
     }
 
     private void handleNewSession() {
