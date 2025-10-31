@@ -123,7 +123,7 @@ racing:
     # NEW: Gran Turismo 7
     gt7-port: 33740                    # Receive telemetry
     gt7-heartbeat-port: 33739          # Send heartbeat
-    gt7-ps4-ip: "192.168.1.XXX"        # <-- WICHTIG: DEINE PS4 IP HIER EINTRAGEN!
+    gt7-ps4-ip: ${GT7_PS4_IP:}         # <-- GEÄNDERT: Jetzt aus ENV Variable
 
     enabled: true
 
