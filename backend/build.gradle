@@ -44,6 +44,9 @@ dependencies {
     // Development Tools
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
 
+    // Bouncy Castle für GT7 Salsa20 Encryption
+    implementation 'org.bouncycastle:bcprov-jdk15on:1.70'
+
     // Testing
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.spockframework:spock-core:2.3-groovy-4.0'

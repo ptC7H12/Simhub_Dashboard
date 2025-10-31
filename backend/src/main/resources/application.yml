@@ -116,10 +116,15 @@ logging:
 racing:
   # UDP Listener Configuration
   udp:
-    ac-port: ${UDP_AC_PORT:9996}        # Assetto Corsa
-    f1-port: ${UDP_F1_PORT:20777}       # F1 2024
-    gt7-port: ${UDP_GT7_PORT:33740}     # Gran Turismo 7
-    buffer-size: 2048
+    # Existing
+    ac-port: 9996        # Assetto Corsa
+    f1-port: 20777       # F1 2024
+
+    # NEW: Gran Turismo 7
+    gt7-port: 33740                    # Receive telemetry
+    gt7-heartbeat-port: 33739          # Send heartbeat
+    gt7-ps4-ip: "192.168.1.XXX"        # <-- WICHTIG: DEINE PS4 IP HIER EINTRAGEN!
+
     enabled: true
 
   # Statistics Calculation
