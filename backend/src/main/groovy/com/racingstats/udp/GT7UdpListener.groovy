@@ -2,6 +2,7 @@ package com.racingstats.udp
 
 import com.racingstats.dto.TelemetryData
 import com.racingstats.service.SessionService
+import com.racingstats.service.GT7MappingService
 import groovy.util.logging.Slf4j
 import org.bouncycastle.crypto.engines.Salsa20Engine
 import org.bouncycastle.crypto.params.KeyParameter
@@ -23,11 +24,12 @@ import java.nio.ByteOrder
  * Basiert auf Community Reverse-Engineering:
  * - https://github.com/snipem/gt7dashboard (MIT License)
  * - https://github.com/Nenkai/PDTools/wiki/GT7-Telemetry
+ * - https://ddm999.github.io/gt7info/ (Car/Track Mappings)
  *
  * Features:
  * - Salsa20 Decryption (Bouncy Castle)
  * - Heartbeat-Mechanismus (keep-alive)
- * - Track & Car Name Mapping
+ * - Auto-Downloaded Car & Track Names (551+ cars, 39+ tracks)
  * - Full Telemetry Parsing
  */
 @Component
@@ -35,6 +37,7 @@ import java.nio.ByteOrder
 class GT7UdpListener {
 
     private final SessionService sessionService
+    private final GT7MappingService mappingService
 
     @Value('${racing.udp.gt7-port:33740}')
     private int receivePort
@@ -72,8 +75,9 @@ class GT7UdpListener {
     private static final int MAGIC_OFFSET = 0x00
     private static final byte[] MAGIC_PLAIN = [0x47, 0x37, 0x53, 0x30] as byte[] // "G7S0"
 
-    GT7UdpListener(SessionService sessionService) {
+    GT7UdpListener(SessionService sessionService, GT7MappingService mappingService) {
         this.sessionService = sessionService
+        this.mappingService = mappingService
     }
 
     @PostConstruct
@@ -115,6 +119,8 @@ class GT7UdpListener {
             log.info("  Heartbeat Port: {}", heartbeatPort)
             log.info("  Target PS4: {}", ps4IpAddress)
             log.info("  Salsa20 Decryption: ENABLED")
+            log.info("  Car Database: {} cars loaded", mappingService.statistics.carsLoaded)
+            log.info("  Track Database: {} tracks loaded", mappingService.statistics.tracksLoaded)
             log.info("═══════════════════════════════════════════════════════")
         } catch (Exception e) {
             log.error("Failed to start GT7 UDP Listener", e)
@@ -310,13 +316,13 @@ class GT7UdpListener {
             buffer.position(0x94)
             int carCode = buffer.getInt()
 
-            // Track Code (0xA4 - 4 bytes int) - WICHTIG!
+            // Track Code (0xA4 - 4 bytes int)
             buffer.position(0xA4)
             int trackCode = buffer.getInt()
 
-            // Update track & car names
-            currentTrack = trackCode > 0 ? "GT7 Track ${trackCode}" : "Gran Turismo 7 Track"
-            currentCar = carCode > 0 ? "GT7 Car ${carCode}" : "Unknown Car"
+            // Nutze GT7MappingService für Namen
+            currentTrack = mappingService.getTrackName(trackCode)
+            currentCar = mappingService.getCarName(carCode)
 
             // Gear & Throttle/Brake
             buffer.position(0x90)
@@ -364,11 +370,12 @@ class GT7UdpListener {
                         normalizedPosition: positionOnTrack
                 )
 
-                log.trace("GT7 Telemetry - Speed: {} km/h, Gear: {}, RPM: {}, Track: {}",
+                log.trace("GT7 Telemetry - Speed: {} km/h, Gear: {}, RPM: {}, Track: {}, Car: {}",
                         String.format("%.1f", telemetry.speed),
                         telemetry.gear,
                         telemetry.rpm,
-                        currentTrack)
+                        currentTrack,
+                        currentCar)
 
                 sessionService.processTelemetry('GRAN_TURISMO_7', telemetry)
             }
@@ -376,76 +383,6 @@ class GT7UdpListener {
         } catch (Exception e) {
             log.error("Error parsing GT7 telemetry", e)
         }
-    }
-
-    private String getTrackName(int trackCode) {
-        // GT7 Track Codes (Community Research)
-        def tracks = [
-                // Japan
-                100: "Tokyo Expressway - Central Outer Loop",
-                101: "Tokyo Expressway - Central Inner Loop",
-                102: "Tokyo Expressway - South Outer Loop",
-                103: "Tokyo Expressway - South Inner Loop",
-                104: "Tokyo Expressway - East Outer Loop",
-                105: "Tokyo Expressway - East Inner Loop",
-
-                200: "Tsukuba Circuit",
-                201: "Suzuka Circuit",
-                202: "Fuji Speedway",
-                203: "Autopolis",
-
-                // Europe
-                300: "Brands Hatch Grand Prix Circuit",
-                301: "Brands Hatch Indy Circuit",
-                302: "Goodwood Motor Circuit",
-
-                400: "Circuit de la Sarthe",
-                401: "Circuit de Spa-Francorchamps",
-                402: "Autodromo Nazionale Monza",
-                403: "Nürburgring 24h",
-                404: "Nürburgring Nordschleife",
-                405: "Red Bull Ring",
-                406: "Circuit de Barcelona-Catalunya",
-
-                // USA
-                500: "Laguna Seca Raceway",
-                501: "Willow Springs Raceway",
-                502: "WeatherTech Raceway Laguna Seca",
-                503: "Daytona International Speedway",
-
-                // Original GT Tracks
-                600: "Dragon Trail - Seaside",
-                601: "Dragon Trail - Gardens",
-                602: "Autodrome Lago Maggiore GP",
-                603: "Autodrome Lago Maggiore - East",
-                604: "Autodrome Lago Maggiore - West",
-                605: "Northern Isle Speedway",
-
-                // Dirt/Rally
-                700: "Fishermans Ranch",
-                701: "Colorado Springs",
-                702: "Alsace Village",
-                703: "Sardegna - Road Track A",
-                704: "Sardegna - Road Track B",
-                705: "Sardegna - Windmills"
-        ]
-
-        return tracks[trackCode] ?: "GT7 Track ${trackCode}"
-    }
-
-    private String getCarName(int carCode) {
-        // Vereinfachtes Car-Mapping (GT7 hat 400+ Autos)
-        // Hier nur ein paar Beispiele - erweitere nach Bedarf
-        def cars = [
-                1: "Mazda Roadster S",
-                2: "Honda NSX Type R",
-                3: "Nissan GT-R Nismo",
-                4: "Toyota Supra RZ",
-                5: "Porsche 911 GT3 RS"
-                // ... weitere nach Bedbedarf
-        ]
-
-        return cars[carCode] ?: "GT7 Car ${carCode}"
     }
 
     private void handleNewSession() {
@@ -473,10 +410,12 @@ class GT7UdpListener {
                 cuts: 0  // GT7 doesn't provide cut detection easily
         )
 
-        log.info("GT7 Lap Completed - Lap #{}, Time: {} ({})",
+        log.info("GT7 Lap Completed - Lap #{}, Time: {} ({}ms) - {} @ {}",
                 telemetry.lapNumber,
                 formatLapTime(telemetry.lapTime),
-                telemetry.lapTime + "ms")
+                telemetry.lapTime,
+                currentCar,
+                currentTrack)
 
         sessionService.processTelemetry('GRAN_TURISMO_7', telemetry)
     }
