@@ -9,7 +9,6 @@ import org.springframework.transaction.annotation.Transactional
 
 @Service
 @Slf4j
-@Transactional(readOnly = true)
 class LeaderboardService {
 
     private final StatisticsRepository statisticsRepository
@@ -29,16 +28,22 @@ class LeaderboardService {
     /**
      * Globales Leaderboard: Alle Strecken kombiniert
      */
+    @Transactional(readOnly = true)
     List<LeaderboardEntry> getGlobalLeaderboard() {
         def driverStats = [:]
 
-        statisticsRepository.findByStatType(StatType.BEST_LAP).each { stat ->
-            String key = stat.driver.id.toString()
+        // Lade alle Best Lap Statistics
+        def bestLapStats = statisticsRepository.findByStatType(StatType.BEST_LAP)
 
-            if (!driverStats[key]) {
-                driverStats[key] = [
+        bestLapStats.each { stat ->
+            // Lade Driver SOFORT innerhalb der Transaktion
+            String driverId = stat.driver.id.toString()
+            String driverName = stat.driver.displayNameOrName
+
+            if (!driverStats[driverId]) {
+                driverStats[driverId] = [
                         driverId: stat.driver.id,
-                        driverName: stat.driver.displayNameOrName,
+                        driverName: driverName,
                         totalBestLaps: 0,
                         averageBestLap: 0,
                         totalMastery: 0,
@@ -46,21 +51,23 @@ class LeaderboardService {
                 ]
             }
 
-            driverStats[key].totalBestLaps += stat.value
-            driverStats[key].trackCount++
+            driverStats[driverId].totalBestLaps += stat.value
+            driverStats[driverId].trackCount++
         }
 
         // Berechne Durchschnitte und hole Mastery
-        driverStats.values().each { stats ->
-            stats.averageBestLap = stats.totalBestLaps / stats.trackCount
+        driverStats.values().each { driverEntry ->  // <- UMBENANNT von 'stats' zu 'driverEntry'
+            driverEntry.averageBestLap = driverEntry.totalBestLaps / driverEntry.trackCount
 
             def masteryStats = statisticsRepository.findByDriverIdAndStatType(
-                    UUID.fromString(stats.driverId.toString()),
+                    driverEntry.driverId as UUID,
                     StatType.TRACK_MASTERY
             )
 
             if (masteryStats) {
-                stats.totalMastery = masteryStats.collect { it.value }.average()
+                driverEntry.totalMastery = masteryStats.collect { it.value }.average() ?: 0
+            } else {
+                driverEntry.totalMastery = 0
             }
         }
 
@@ -85,43 +92,28 @@ class LeaderboardService {
     /**
      * Track-spezifisches Leaderboard
      */
+    @Transactional(readOnly = true)
     List<LeaderboardEntry> getTrackLeaderboard(UUID trackId, String carModel = null) {
         Track track = trackRepository.findById(trackId)
                 .orElseThrow { new IllegalArgumentException("Track not found") }
 
-        def query = """
-            SELECT 
-                d.id as driver_id,
-                d.name as driver_name,
-                s.car_model,
-                MIN(l.time_millis) as best_lap,
-                AVG(l.time_millis) FILTER (WHERE l.is_valid) as avg_lap,
-                COUNT(l.id) FILTER (WHERE l.is_valid) as valid_laps,
-                STDDEV(l.time_millis) FILTER (WHERE l.is_valid) as consistency
-            FROM laps l
-            JOIN sessions s ON l.session_id = s.id
-            JOIN drivers d ON s.driver_id = d.id
-            WHERE s.track_id = :trackId
-            ${carModel ? "AND s.car_model = :carModel" : ""}
-            AND l.is_valid = true
-            GROUP BY d.id, d.name, s.car_model
-            ORDER BY best_lap ASC
-        """
-
         def results = lapRepository.findTrackLeaderboard(trackId, carModel)
 
         return results.withIndex().collect { result, index ->
-            def consistency = 100 - Math.min((result.consistency / result.avgLap * 100) * 10, 100)
+            // Berechne Consistency
+            double avgLap = result.avgLap as double
+            double stdDev = result.consistency as double
+            double consistency = 100 - Math.min((stdDev / avgLap * 100) * 10, 100)
 
             new LeaderboardEntry(
                     position: index + 1,
-                    driverId: result.driverId,
-                    driverName: result.driverName,
-                    lapTime: result.bestLap,
-                    averageLapTime: result.avgLap.longValue(),
+                    driverId: result.driverId as UUID,
+                    driverName: result.driverName as String,
+                    lapTime: result.bestLap as Long,
+                    averageLapTime: avgLap.longValue(),
                     consistencyScore: Math.round(consistency * 100) / 100,
-                    lapCount: result.validLaps,
-                    carModel: result.carModel
+                    lapCount: result.validLaps as Integer,
+                    carModel: result.carModel as String
             )
         }
     }
@@ -129,30 +121,16 @@ class LeaderboardService {
     /**
      * Car-Comparison: Welches Auto ist am besten für diese Strecke?
      */
+    @Transactional(readOnly = true)
     List<Map<String, Object>> getCarComparison(UUID trackId, UUID driverId) {
-        def query = """
-            SELECT 
-                s.car_model,
-                MIN(l.time_millis) as best_lap,
-                AVG(l.time_millis) FILTER (WHERE l.is_valid) as avg_lap,
-                COUNT(l.id) FILTER (WHERE l.is_valid) as lap_count
-            FROM laps l
-            JOIN sessions s ON l.session_id = s.id
-            WHERE s.track_id = :trackId
-            AND s.driver_id = :driverId
-            AND l.is_valid = true
-            GROUP BY s.car_model
-            ORDER BY best_lap ASC
-        """
-
         return lapRepository.findCarComparison(trackId, driverId)
                 .collect { result ->
                     [
-                            carModel: result.carModel,
-                            bestLap: result.bestLap,
-                            averageLap: result.avgLap,
-                            lapCount: result.lapCount,
-                            improvement: null // TODO: Calculate vs. other cars
+                            carModel: result.carModel as String,
+                            bestLap: result.bestLap as Long,
+                            averageLap: (result.avgLap as Double).longValue(),
+                            lapCount: result.lapCount as Integer,
+                            improvement: null
                     ]
                 }
     }
@@ -160,6 +138,7 @@ class LeaderboardService {
     /**
      * Personal Progress: Wie hat sich ein Fahrer auf einer Strecke verbessert?
      */
+    @Transactional(readOnly = true)
     Map<String, Object> getPersonalProgress(UUID driverId, UUID trackId) {
         def sessions = lapRepository.findSessionProgressByDriverAndTrack(driverId, trackId)
 
@@ -170,27 +149,29 @@ class LeaderboardService {
         def firstSession = sessions.first()
         def lastSession = sessions.last()
 
-        def improvement = ((firstSession.avgLap - lastSession.avgLap) / firstSession.avgLap) * 100
+        double firstAvg = firstSession.avgLap as Double
+        double lastAvg = lastSession.avgLap as Double
+        double improvement = ((firstAvg - lastAvg) / firstAvg) * 100
 
         return [
                 hasData: true,
                 firstSession: [
                         date: firstSession.date,
-                        bestLap: firstSession.bestLap,
-                        avgLap: firstSession.avgLap
+                        bestLap: firstSession.bestLap as Long,
+                        avgLap: firstAvg.longValue()
                 ],
                 lastSession: [
                         date: lastSession.date,
-                        bestLap: lastSession.bestLap,
-                        avgLap: lastSession.avgLap
+                        bestLap: lastSession.bestLap as Long,
+                        avgLap: lastAvg.longValue()
                 ],
                 improvement: Math.round(improvement * 100) / 100,
                 totalSessions: sessions.size(),
                 progressChart: sessions.collect {
                     [
                             date: it.date,
-                            bestLap: it.bestLap,
-                            avgLap: it.avgLap
+                            bestLap: it.bestLap as Long,
+                            avgLap: (it.avgLap as Double).longValue()
                     ]
                 }
         ]
