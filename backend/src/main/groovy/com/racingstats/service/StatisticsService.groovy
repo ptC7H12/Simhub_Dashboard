@@ -185,56 +185,70 @@ class StatisticsService {
         statisticsRepository.save(stat)
     }
 
-    /**
-     * Hole Driver-Statistiken für Dashboard
-     */
+/**
+ * Hole Driver-Statistiken für Dashboard
+ */
     DriverStatistics getDriverStatistics(UUID driverId) {
         Driver driver = driverRepository.findById(driverId)
                 .orElseThrow { new IllegalArgumentException("Driver not found") }
 
         def stats = new DriverStatistics(
                 driverId: driver.id,
-                driverName: driver.displayNameOrName
+                driverName: driver.displayNameOrName,
+                totalLaps: 0.0,
+                averageConsistency: 0.0
         )
 
-        // Favorite Track (höchster Track Mastery Score)
-        Statistics favoriteTrack = statisticsRepository
-                .findTopByDriverAndStatTypeOrderByValueDesc(driver, StatType.TRACK_MASTERY)
+        try {
+            // Favorite Track (höchster Track Mastery Score)
+            Statistics favoriteTrack = statisticsRepository
+                    .findTopByDriverAndStatTypeOrderByValueDesc(driver, StatType.TRACK_MASTERY)
+                    .orElse(null)
 
-        if (favoriteTrack) {
-            stats.favoriteTrack = favoriteTrack.track.name
-            stats.favoriteTrackMastery = favoriteTrack.value
-        }
+            if (favoriteTrack && favoriteTrack.track) {
+                stats.favoriteTrack = favoriteTrack.track.name
+                stats.favoriteTrackMastery = favoriteTrack.value
+            }
 
-        // Worst Track (niedrigster Track Mastery Score)
-        Statistics worstTrack = statisticsRepository
-                .findTopByDriverAndStatTypeOrderByValueAsc(driver, StatType.TRACK_MASTERY)
+            // Worst Track (niedrigster Track Mastery Score)
+            Statistics worstTrack = statisticsRepository
+                    .findTopByDriverAndStatTypeOrderByValueAsc(driver, StatType.TRACK_MASTERY)
+                    .orElse(null)
 
-        if (worstTrack) {
-            stats.worstTrack = worstTrack.track.name
-            stats.worstTrackMastery = worstTrack.value
-        }
+            if (worstTrack && worstTrack.track) {
+                stats.worstTrack = worstTrack.track.name
+                stats.worstTrackMastery = worstTrack.value
+            }
 
-        // Total Laps
-        stats.totalLaps = statisticsRepository
-                .findByDriverAndStatType(driver, StatType.TOTAL_LAPS)
-                .sum { it.value } ?: 0
+            // Total Laps
+            def totalLapStats = statisticsRepository
+                    .findByDriverAndStatType(driver, StatType.TOTAL_LAPS)
 
-        // Average Consistency
-        def consistencyStats = statisticsRepository
-                .findByDriverAndStatType(driver, StatType.CONSISTENCY_SCORE)
+            if (totalLapStats && !totalLapStats.isEmpty()) {
+                stats.totalLaps = totalLapStats.sum { it.value } ?: 0.0
+            }
 
-        if (consistencyStats) {
-            stats.averageConsistency = consistencyStats.collect { it.value }.average()
-        }
+            // Average Consistency
+            def consistencyStats = statisticsRepository
+                    .findByDriverAndStatType(driver, StatType.CONSISTENCY_SCORE)
 
-        // Best overall improvement rate
-        Statistics bestImprovement = statisticsRepository
-                .findTopByDriverAndStatTypeOrderByValueDesc(driver, StatType.IMPROVEMENT_RATE)
+            if (consistencyStats && !consistencyStats.isEmpty()) {
+                stats.averageConsistency = consistencyStats.collect { it.value }.average()
+            }
 
-        if (bestImprovement) {
-            stats.bestImprovementRate = bestImprovement.value
-            stats.bestImprovementTrack = bestImprovement.track.name
+            // Best overall improvement rate
+            Statistics bestImprovement = statisticsRepository
+                    .findTopByDriverAndStatTypeOrderByValueDesc(driver, StatType.IMPROVEMENT_RATE)
+                    .orElse(null)
+
+            if (bestImprovement && bestImprovement.track) {
+                stats.bestImprovementRate = bestImprovement.value
+                stats.bestImprovementTrack = bestImprovement.track.name
+            }
+
+        } catch (Exception e) {
+            log.warn("Error loading some driver statistics for driver ${driver.id}: ${e.message}")
+            // Return stats with default values
         }
 
         return stats
