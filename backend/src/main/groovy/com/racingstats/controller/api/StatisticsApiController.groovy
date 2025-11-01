@@ -17,11 +17,8 @@ class StatisticsApiController {
         this.statisticsService = statisticsService
     }
 
-    /**
-     * Driver-Statistiken
-     */
     @GetMapping('/driver/{driverId}')
-    ResponseEntity<?> getDriverStatistics(@PathVariable UUID driverId) {
+    ResponseEntity<?> getDriverStatistics(@PathVariable("driverId") UUID driverId) {
         try {
             def stats = statisticsService.getDriverStatistics(driverId)
             return ResponseEntity.ok(stats)
@@ -33,11 +30,8 @@ class StatisticsApiController {
         }
     }
 
-    /**
-     * Track-Statistiken (alle Fahrer)
-     */
     @GetMapping('/track/{trackId}')
-    ResponseEntity<?> getTrackStatistics(@PathVariable UUID trackId) {
+    ResponseEntity<?> getTrackStatistics(@PathVariable("trackId") UUID trackId) {
         try {
             def stats = statisticsService.getTrackStatistics(trackId)
             return ResponseEntity.ok(stats)
@@ -49,9 +43,6 @@ class StatisticsApiController {
         }
     }
 
-    /**
-     * Trigger manual statistics calculation
-     */
     @PostMapping('/calculate')
     ResponseEntity<?> calculateStatistics() {
         try {
