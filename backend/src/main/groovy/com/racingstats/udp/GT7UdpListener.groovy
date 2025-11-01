@@ -18,20 +18,6 @@ import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/**
- * Gran Turismo 7 UDP Telemetry Listener
- *
- * Basiert auf Community Reverse-Engineering:
- * - https://github.com/snipem/gt7dashboard (MIT License)
- * - https://github.com/Nenkai/PDTools/wiki/GT7-Telemetry
- * - https://ddm999.github.io/gt7info/ (Car/Track Mappings)
- *
- * Features:
- * - Salsa20 Decryption (Bouncy Castle)
- * - Heartbeat-Mechanismus (keep-alive)
- * - Auto-Downloaded Car & Track Names (551+ cars, 39+ tracks)
- * - Full Telemetry Parsing
- */
 @Component
 @Slf4j
 class GT7UdpListener {
@@ -58,22 +44,23 @@ class GT7UdpListener {
     private volatile boolean running = false
 
     private boolean sessionStarted = false
+    private boolean wasInGame = false
     private int lastLapCount = 0
+    private int lastCarCode = 0
     private String currentTrack = "Unknown Track"
     private String currentCar = "Unknown Car"
+    private int menuPacketCount = 0
 
-    // GT7 Salsa20 Key (from community reverse engineering)
-    // Represents "GRAND TURISMO 7 TELEMETRY" (sic - typo in game)
+    // GT7 Salsa20 Key
     private static final byte[] SALSA20_KEY = [
-            0x47, 0x52, 0x41, 0x4E, 0x44, 0x20, 0x54, 0x55,  // "GRAND TU"
-            0x52, 0x49, 0x53, 0x4D, 0x4F, 0x20, 0x37, 0x20,  // "RISMO 7 "
-            0x54, 0x45, 0x4C, 0x45, 0x4D, 0x45, 0x54, 0x52,  // "TELEMETR"
-            0x59, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00   // "Y\0\0\0..."
+            0x47, 0x52, 0x41, 0x4E, 0x44, 0x20, 0x54, 0x55,
+            0x52, 0x49, 0x53, 0x4D, 0x4F, 0x20, 0x37, 0x20,
+            0x54, 0x45, 0x4C, 0x45, 0x4D, 0x45, 0x54, 0x52,
+            0x59, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     ] as byte[]
 
     private static final int PACKET_SIZE = 296
-    private static final int MAGIC_OFFSET = 0x00
-    private static final byte[] MAGIC_PLAIN = [0x47, 0x37, 0x53, 0x30] as byte[] // "G7S0"
+    private static final byte[] MAGIC_PLAIN = [0x47, 0x37, 0x53, 0x30] as byte[]
 
     GT7UdpListener(SessionService sessionService, GT7MappingService mappingService) {
         this.sessionService = sessionService
@@ -91,7 +78,6 @@ class GT7UdpListener {
             log.error("═══════════════════════════════════════════════════════")
             log.error("  GT7 ERROR: PS4 IP address not configured!")
             log.error("  Set 'racing.udp.gt7-ps4-ip' in application.yml")
-            log.error("  Example: racing.udp.gt7-ps4-ip: \"192.168.1.100\"")
             log.error("═══════════════════════════════════════════════════════")
             return
         }
@@ -101,13 +87,11 @@ class GT7UdpListener {
             heartbeatSocket = new DatagramSocket()
             running = true
 
-            // Start Listener Thread
             listenerThread = new Thread(this::listen)
             listenerThread.name = "GT7-UDP-Listener"
             listenerThread.daemon = false
             listenerThread.start()
 
-            // Start Heartbeat Thread
             heartbeatThread = new Thread(this::sendHeartbeats)
             heartbeatThread.name = "GT7-Heartbeat"
             heartbeatThread.daemon = false
@@ -118,7 +102,6 @@ class GT7UdpListener {
             log.info("  Receive Port: {}", receivePort)
             log.info("  Heartbeat Port: {}", heartbeatPort)
             log.info("  Target PS4: {}", ps4IpAddress)
-            log.info("  Salsa20 Decryption: ENABLED")
             log.info("  Car Database: {} cars loaded", mappingService.statistics.carsLoaded)
             log.info("  Track Database: {} tracks loaded", mappingService.statistics.tracksLoaded)
             log.info("═══════════════════════════════════════════════════════")
@@ -130,32 +113,15 @@ class GT7UdpListener {
     @PreDestroy
     void stop() {
         running = false
-
-        if (receiveSocket) {
-            receiveSocket.close()
-        }
-
-        if (heartbeatSocket) {
-            heartbeatSocket.close()
-        }
-
-        if (listenerThread) {
-            listenerThread.interrupt()
-        }
-
-        if (heartbeatThread) {
-            heartbeatThread.interrupt()
-        }
-
+        if (receiveSocket) receiveSocket.close()
+        if (heartbeatSocket) heartbeatSocket.close()
+        if (listenerThread) listenerThread.interrupt()
+        if (heartbeatThread) heartbeatThread.interrupt()
         log.info("GT7 UDP Listener stopped")
     }
 
-    /**
-     * Heartbeat Thread: Sends keep-alive packets to PS4
-     * GT7 only sends telemetry if it receives regular heartbeats
-     */
     private void sendHeartbeats() {
-        byte[] heartbeatData = "A".getBytes()  // Simple "A" as heartbeat
+        byte[] heartbeatData = "A".getBytes()
 
         while (running) {
             try {
@@ -170,24 +136,17 @@ class GT7UdpListener {
                 heartbeatSocket.send(packet)
                 log.debug("Heartbeat sent to {}:{}", ps4IpAddress, heartbeatPort)
 
-                Thread.sleep(10000) // Every 10 seconds
+                Thread.sleep(10000)
 
             } catch (InterruptedException e) {
-                if (running) {
-                    log.warn("Heartbeat thread interrupted")
-                }
+                if (running) log.warn("Heartbeat thread interrupted")
                 break
             } catch (Exception e) {
-                if (running) {
-                    log.error("Error sending heartbeat to {}", ps4IpAddress, e)
-                }
+                if (running) log.error("Error sending heartbeat", e)
             }
         }
     }
 
-    /**
-     * Main listener thread
-     */
     private void listen() {
         byte[] buffer = new byte[PACKET_SIZE + 100]
 
@@ -200,31 +159,24 @@ class GT7UdpListener {
                 processPacket(data)
 
             } catch (Exception e) {
-                if (running) {
-                    log.error("Error receiving GT7 packet", e)
-                }
+                if (running) log.error("Error receiving GT7 packet", e)
             }
         }
     }
 
-    /**
-     * Process incoming packet (encrypted or plain)
-     */
     private void processPacket(byte[] rawData) {
         try {
             if (rawData.length < PACKET_SIZE) {
-                log.trace("Packet too small: {} bytes (expected {})", rawData.length, PACKET_SIZE)
+                log.trace("Packet too small: {} bytes", rawData.length)
                 return
             }
 
             byte[] data
 
-            // Check if packet is plain or encrypted
             if (isPlainPacket(rawData)) {
-                log.trace("Plain packet detected (simulator mode)")
+                log.trace("Plain packet detected")
                 data = rawData
             } else {
-                // Decrypt with Salsa20
                 data = decryptSalsa20(rawData)
                 if (data == null) {
                     log.warn("Failed to decrypt GT7 packet")
@@ -232,7 +184,6 @@ class GT7UdpListener {
                 }
             }
 
-            // Parse decrypted telemetry
             parseTelemetry(data)
 
         } catch (Exception e) {
@@ -240,9 +191,6 @@ class GT7UdpListener {
         }
     }
 
-    /**
-     * Check if packet is plain (simulator mode) or encrypted
-     */
     private boolean isPlainPacket(byte[] data) {
         if (data.length < 4) return false
 
@@ -252,34 +200,19 @@ class GT7UdpListener {
                 data[3] == MAGIC_PLAIN[3]
     }
 
-    /**
-     * Decrypt GT7 packet using Salsa20
-     * Based on gt7dashboard implementation (MIT License)
-     */
     private byte[] decryptSalsa20(byte[] encrypted) {
         try {
-            if (encrypted.length < PACKET_SIZE) {
-                return null
-            }
+            if (encrypted.length < PACKET_SIZE) return null
 
-            // IV is in the packet at a specific offset
-            // For GT7: IV is constructed from specific packet bytes
             byte[] iv = new byte[8]
+            System.arraycopy(encrypted, 0x40, iv, 0, 4)
+            System.arraycopy(encrypted, 0x44, iv, 4, 4)
 
-            // Extract IV from packet (bytes at specific positions)
-            // This is specific to GT7's implementation
-            System.arraycopy(encrypted, 0x40, iv, 0, 4)  // Offset 0x40
-            System.arraycopy(encrypted, 0x44, iv, 4, 4)  // Offset 0x44
-
-            // Create Salsa20 cipher
             Salsa20Engine salsa = new Salsa20Engine()
-
-            // Initialize with key and IV
             KeyParameter keyParam = new KeyParameter(SALSA20_KEY)
             ParametersWithIV params = new ParametersWithIV(keyParam, iv)
-            salsa.init(false, params) // false = decrypt
+            salsa.init(false, params)
 
-            // Decrypt
             byte[] decrypted = new byte[PACKET_SIZE]
             salsa.processBytes(encrypted, 0, PACKET_SIZE, decrypted, 0)
 
@@ -292,90 +225,155 @@ class GT7UdpListener {
     }
 
     /**
-     * Parse GT7 telemetry packet
-     * Structure based on community reverse engineering
+     * Parse GT7 telemetry mit In-Game Detection
      */
     private void parseTelemetry(byte[] data) {
         try {
             ByteBuffer buffer = ByteBuffer.wrap(data)
             buffer.order(ByteOrder.LITTLE_ENDIAN)
 
-            // Position on track (0-1)
-            buffer.position(0x04)
-            float positionOnTrack = buffer.getFloat()
+            // Magic number check
+            buffer.position(0x00)
+            int magic = buffer.getInt()
+            if (magic != 0x30533747) { // "G7S0"
+                log.trace("Invalid magic: 0x{}", Integer.toHexString(magic))
+                return
+            }
 
-            // Velocity (m/s)
+            // ═══════════════════════════════════════════════════════
+            // IN-GAME DETECTION - Prüfe ob wirklich gespielt wird
+            // ═══════════════════════════════════════════════════════
+
+            // Flags (Offset 0x149 - 1 byte)
+            buffer.position(0x149)
+            byte flags = buffer.get()
+
+            // Bit 0: Paused
+            // Bit 1: Loading
+            // Bit 2: In Gear (not in neutral)
+            boolean isPaused = (flags & 0x02) != 0
+            boolean isLoading = (flags & 0x04) != 0
+
+            // Speed (m/s)
             buffer.position(0x4C)
-            float velocityMS = buffer.getFloat()
+            float speedMS = buffer.getFloat()
+
+            // Current Lap
+            buffer.position(0x78)
+            int currentLap = buffer.getShort() & 0xFFFF
+
+            // Car Code
+            buffer.position(0x124)
+            int carCode = buffer.getInt()
 
             // Engine RPM
             buffer.position(0x3C)
             float engineRPM = buffer.getFloat()
 
-            // Car Code (0x94 - 4 bytes int)
-            buffer.position(0x94)
-            int carCode = buffer.getInt()
+            // ═══════════════════════════════════════════════════════
+            // VALIDIERUNG: Sind wir WIRKLICH im Spiel?
+            // ═══════════════════════════════════════════════════════
+            boolean isInGame =
+                    !isPaused &&
+                            !isLoading &&
+                            carCode > 0 &&
+                            carCode < 10000 &&
+                            currentLap > 0 &&
+                            currentLap < 1000 &&
+                            speedMS >= 0 &&
+                            speedMS < 200 && // Max ~720 km/h
+                            engineRPM >= 0 &&
+                            engineRPM < 15000
 
-            // Track Code (0xA4 - 4 bytes int)
-            buffer.position(0xA4)
-            int trackCode = buffer.getInt()
+            // Debug Logging für Menü-Pakete (nur alle 100 Pakete)
+            if (!isInGame) {
+                menuPacketCount++
+                if (menuPacketCount % 100 == 0) {
+                    log.debug("GT7 Menu/Paused (#{}) - Paused: {}, Loading: {}, Car: {}, Lap: {}, Speed: {:.1f}",
+                            menuPacketCount, isPaused, isLoading, carCode, currentLap, speedMS)
+                }
 
-            // Nutze GT7MappingService für Namen
-            currentTrack = mappingService.getTrackName(trackCode)
-            currentCar = mappingService.getCarName(carCode)
+                // Session beenden wenn wir ins Menü gehen
+                if (wasInGame && sessionStarted) {
+                    handleEndSession()
+                    sessionStarted = false
+                    wasInGame = false
+                    log.info("GT7 Session ended (returned to menu)")
+                }
 
-            // Gear & Throttle/Brake
+                return // Ignoriere Menü-Pakete
+            }
+
+            // Reset Menu Counter
+            if (menuPacketCount > 0) {
+                log.info("GT7 Game resumed (menu packets: {})", menuPacketCount)
+                menuPacketCount = 0
+            }
+
+            wasInGame = true
+
+            // ═══════════════════════════════════════════════════════
+            // AB HIER: Wir sind definitiv im Spiel!
+            // ═══════════════════════════════════════════════════════
+
+            // Position on track
+            buffer.position(0x04)
+            float positionOnTrack = buffer.getFloat()
+
+            // Gear & Inputs
             buffer.position(0x90)
-            byte currentGear = buffer.get()
+            byte gear = buffer.get()
+            buffer.position(0x91)
+            byte suggestedGear = buffer.get()
+            buffer.position(0x92)
             byte throttle = buffer.get()
+            buffer.position(0x93)
             byte brake = buffer.get()
 
-            // Lap information
-            buffer.position(0x74)
-            int lapsCompleted = buffer.getShort() & 0xFFFF
+            // Update car wenn geändert
+            if (carCode != lastCarCode) {
+                lastCarCode = carCode
+                currentCar = mappingService.getCarName(carCode)
+                log.info("GT7 Car detected: {} (Code: {})", currentCar, carCode)
+            }
 
-            buffer.position(0x78)
+            // Lap Times
+            buffer.position(0x76)
             int totalLaps = buffer.getShort() & 0xFFFF
 
-            buffer.position(0x7C)
-            int lastLapTimeMs = buffer.getInt()
-
             buffer.position(0x80)
-            int bestLapTimeMs = buffer.getInt()
+            int bestLapTime = buffer.getInt()
 
-            boolean isMoving = velocityMS > 0.1f
+            buffer.position(0x84)
+            int lastLapTime = buffer.getInt()
 
             // Check for new session
-            if (!sessionStarted && isMoving) {
+            if (!sessionStarted) {
                 handleNewSession()
                 sessionStarted = true
             }
 
             // Check for lap completion
-            if (lapsCompleted > lastLapCount && lastLapTimeMs > 0) {
-                handleLapCompleted(lapsCompleted, lastLapTimeMs)
-                lastLapCount = lapsCompleted
+            if (currentLap > lastLapCount && lastLapTime > 0 && lastLapTime < 600000) {
+                handleLapCompleted(currentLap, lastLapTime)
+                lastLapCount = currentLap
             }
 
-            // Send telemetry update
-            if (sessionStarted && isMoving) {
+            // Send telemetry update (nur alle 10 Pakete = ~600ms bei 60Hz)
+            if (System.currentTimeMillis() % 10 < 2) {
                 TelemetryData telemetry = new TelemetryData(
                         packetType: 'CAR_UPDATE',
                         carId: 0,
-                        speed: velocityMS * 3.6f,
+                        speed: speedMS * 3.6f,
                         rpm: (int) engineRPM,
-                        gear: currentGear.intValue(),
+                        gear: Math.max(0, gear - 1),
                         throttle: (throttle & 0xFF) / 255f,
                         brake: (brake & 0xFF) / 255f,
                         normalizedPosition: positionOnTrack
                 )
 
-                log.trace("GT7 Telemetry - Speed: {} km/h, Gear: {}, RPM: {}, Track: {}, Car: {}",
-                        String.format("%.1f", telemetry.speed),
-                        telemetry.gear,
-                        telemetry.rpm,
-                        currentTrack,
-                        currentCar)
+                log.trace("GT7 Live - Speed: {:.1f} km/h, Gear: {}, RPM: {}, Lap: {}/{}",
+                        telemetry.speed, telemetry.gear, telemetry.rpm, currentLap, totalLaps)
 
                 sessionService.processTelemetry('GRAN_TURISMO_7', telemetry)
             }
@@ -391,11 +389,13 @@ class GT7UdpListener {
                 carId: 0,
                 trackName: currentTrack,
                 carModel: currentCar,
-                sessionType: 1  // Practice
+                sessionType: 1
         )
 
-        log.info("GT7 New Session Started - Track: {}, Car: {}",
-                telemetry.trackName, telemetry.carModel)
+        log.info("═══════════════════════════════════════════════════════")
+        log.info("  GT7 Session STARTED")
+        log.info("  Car: {}", currentCar)
+        log.info("═══════════════════════════════════════════════════════")
 
         sessionService.processTelemetry('GRAN_TURISMO_7', telemetry)
         lastLapCount = 0
@@ -407,15 +407,22 @@ class GT7UdpListener {
                 carId: 0,
                 lapTime: lapTimeMs.longValue(),
                 lapNumber: lapNumber,
-                cuts: 0  // GT7 doesn't provide cut detection easily
+                cuts: 0
         )
 
-        log.info("GT7 Lap Completed - Lap #{}, Time: {} ({}ms) - {} @ {}",
-                telemetry.lapNumber,
-                formatLapTime(telemetry.lapTime),
-                telemetry.lapTime,
-                currentCar,
-                currentTrack)
+        log.info("GT7 Lap #{} - {} - {}",
+                lapNumber,
+                formatLapTime(lapTimeMs),
+                currentCar)
+
+        sessionService.processTelemetry('GRAN_TURISMO_7', telemetry)
+    }
+
+    private void handleEndSession() {
+        TelemetryData telemetry = new TelemetryData(
+                packetType: 'END_SESSION',
+                carId: 0
+        )
 
         sessionService.processTelemetry('GRAN_TURISMO_7', telemetry)
     }
